@@ -23,10 +23,13 @@ import { CSS } from "@dnd-kit/utilities";
 import { FileTextIcon, GripVerticalIcon, Trash2Icon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { downloadBytes } from "@/lib/download";
+import { loadPdfDocument } from "@/lib/pdf";
 import { cn } from "@/lib/utils";
+import { useCancelableTask } from "@/hooks/useCancelableTask";
 
 type UploadedPdf = {
   id: string;
@@ -97,8 +100,8 @@ function SortableFileRow({
 
 export function MergeTool() {
   const [items, setItems] = useState<UploadedPdf[]>([]);
-  const [isMerging, setIsMerging] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const task = useCancelableTask();
 
   const ids = useMemo(() => items.map((i) => i.id), [items]);
 
@@ -116,6 +119,7 @@ export function MergeTool() {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     multiple: true,
+    disabled: task.isRunning,
     accept: {
       "application/pdf": [".pdf"],
     },
@@ -139,24 +143,40 @@ export function MergeTool() {
     }
 
     try {
-      setIsMerging(true);
-      const out = await PDFDocument.create();
+      await task.start(async ({ signal, reportProgress }) => {
+        reportProgress(0);
 
-      for (const item of items) {
-        const bytes = await item.file.arrayBuffer();
-        const src = await PDFDocument.load(bytes);
-        const pages = await out.copyPages(src, src.getPageIndices());
-        for (const page of pages) out.addPage(page);
-      }
+        const throwIfAborted = () => {
+          if (!signal.aborted) return;
+          throw new DOMException("Aborted", "AbortError");
+        };
 
-      const merged = await out.save();
-      downloadBytes(merged, "merged-document.pdf", "application/pdf");
+        const out = await PDFDocument.create();
+
+        for (let i = 0; i < items.length; i += 1) {
+          const item = items[i];
+          throwIfAborted();
+
+          const bytes = await item.file.arrayBuffer();
+          throwIfAborted();
+
+          const src = await loadPdfDocument(bytes);
+          throwIfAborted();
+
+          const pages = await out.copyPages(src, src.getPageIndices());
+          for (const page of pages) out.addPage(page);
+
+          reportProgress(Math.round(((i + 1) / items.length) * 100));
+        }
+
+        const merged = await out.save();
+        throwIfAborted();
+        downloadBytes(merged, "merged-document.pdf", "application/pdf");
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to merge PDFs.");
-    } finally {
-      setIsMerging(false);
     }
-  }, [items]);
+  }, [items, task]);
 
   return (
     <div className="space-y-4">
@@ -182,7 +202,7 @@ export function MergeTool() {
             variant="outline"
             size="sm"
             onClick={() => setItems([])}
-            disabled={items.length === 0 || isMerging}
+            disabled={items.length === 0 || task.isRunning}
           >
             Clear
           </Button>
@@ -214,7 +234,7 @@ export function MergeTool() {
                       key={item.id}
                       item={item}
                       onRemove={remove}
-                      disabled={isMerging}
+                      disabled={task.isRunning}
                     />
                   ))}
                 </SortableContext>
@@ -224,15 +244,32 @@ export function MergeTool() {
         )}
       </div>
 
+      {task.isRunning ? (
+        <div className="space-y-2">
+          <div className="text-xs text-muted-foreground">
+            {typeof task.progress === "number" ? `Progress: ${task.progress}%` : "Processing..."}
+          </div>
+          <Progress value={typeof task.progress === "number" ? task.progress : 0} />
+        </div>
+      ) : null}
+
       {error ? <div className="text-sm text-destructive">{error}</div> : null}
 
       <div className="flex items-center justify-end gap-2">
         <Button
           type="button"
           onClick={merge}
-          disabled={items.length < 2 || isMerging}
+          disabled={items.length < 2 || task.isRunning}
         >
-          {isMerging ? "Merging..." : "Merge Files"}
+          {task.isRunning ? "Merging..." : "Merge Files"}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={task.cancel}
+          disabled={!task.isRunning}
+        >
+          Cancel
         </Button>
       </div>
     </div>

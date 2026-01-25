@@ -1,13 +1,11 @@
 "use client";
 
 import { useEffect } from "react";
+import { ensurePdfJsWorker } from "@/lib/pdfjs";
 
 export function PdfJsWorker() {
   useEffect(() => {
-    void (async () => {
-      const { pdfjs } = await import("react-pdf");
-      pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
-    })();
+    void ensurePdfJsWorker();
   }, []);
 
   return null;

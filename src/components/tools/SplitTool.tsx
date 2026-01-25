@@ -12,6 +12,8 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { downloadBytes } from "@/lib/download";
+import { loadPdfDocument } from "@/lib/pdf";
+import { ensurePdfJsWorker } from "@/lib/pdfjs";
 import { cn } from "@/lib/utils";
 
 const PdfDocument = dynamic<DocumentProps>(
@@ -104,16 +106,14 @@ export function SplitTool() {
   useEffect(() => {
     let cancelled = false;
 
-    void (async () => {
-      try {
-        const { pdfjs } = await import("react-pdf");
-        pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+    void ensurePdfJsWorker()
+      .then(() => {
         if (!cancelled) setWorkerReady(true);
-      } catch (e) {
+      })
+      .catch((e: unknown) => {
         if (cancelled) return;
         setError(e instanceof Error ? e.message : "Failed to initialize PDF worker.");
-      }
-    })();
+      });
 
     return () => {
       cancelled = true;
@@ -237,7 +237,7 @@ export function SplitTool() {
       setIsExtracting(true);
 
       const sourceBytes = await file.arrayBuffer();
-      const sourceDoc = await PDFDocument.load(sourceBytes);
+      const sourceDoc = await loadPdfDocument(sourceBytes);
 
       const indices = Array.from(selectedPages)
         .sort((a, b) => a - b)
