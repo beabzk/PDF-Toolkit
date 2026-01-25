@@ -4,12 +4,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useDropzone } from "react-dropzone";
 import { PDFDocument } from "pdf-lib";
+import JSZip from "jszip";
 import { DownloadIcon, FileTextIcon, XIcon } from "lucide-react";
 import type { DocumentProps, PageProps } from "react-pdf";
 
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { downloadBytes } from "@/lib/download";
 import { cn } from "@/lib/utils";
 
 const PdfDocument = dynamic<DocumentProps>(
@@ -22,17 +24,70 @@ const PdfPage = dynamic<PageProps>(
   { ssr: false },
 );
 
-function downloadBytes(bytes: Uint8Array, fileName: string) {
-  const safeBytes = new Uint8Array(bytes);
-  const blob = new Blob([safeBytes], { type: "application/pdf" });
-  const url = URL.createObjectURL(blob);
+type OutputMode = "single" | "zip-pages" | "zip-ranges";
 
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = fileName;
-  a.click();
+function defaultBaseName(fileName: string) {
+  return fileName.replace(/\.pdf$/i, "");
+}
 
-  URL.revokeObjectURL(url);
+function parsePageSpec(spec: string, maxPage: number) {
+  const trimmed = spec.trim();
+  if (!trimmed) return new Set<number>();
+
+  const out = new Set<number>();
+  const parts = trimmed
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+  for (const part of parts) {
+    const rangeParts = part.split("-").map((x) => x.trim());
+    if (rangeParts.length === 1) {
+      const n = Number(rangeParts[0]);
+      if (!Number.isInteger(n)) throw new Error(`Invalid page: ${part}`);
+      if (n < 1 || n > maxPage) throw new Error(`Page out of range: ${part}`);
+      out.add(n);
+      continue;
+    }
+
+    if (rangeParts.length !== 2) throw new Error(`Invalid range: ${part}`);
+
+    const start = Number(rangeParts[0]);
+    const end = Number(rangeParts[1]);
+    if (!Number.isInteger(start) || !Number.isInteger(end)) {
+      throw new Error(`Invalid range: ${part}`);
+    }
+    if (start < 1 || end < 1 || start > maxPage || end > maxPage) {
+      throw new Error(`Range out of bounds: ${part}`);
+    }
+    if (start > end) throw new Error(`Range start must be <= end: ${part}`);
+
+    for (let p = start; p <= end; p += 1) out.add(p);
+  }
+
+  return out;
+}
+
+function pagesToRanges(pages: number[]) {
+  const ranges: Array<{ start: number; end: number }> = [];
+  if (pages.length === 0) return ranges;
+
+  let start = pages[0];
+  let prev = pages[0];
+  for (let i = 1; i < pages.length; i += 1) {
+    const cur = pages[i];
+    if (cur === prev + 1) {
+      prev = cur;
+      continue;
+    }
+
+    ranges.push({ start, end: prev });
+    start = cur;
+    prev = cur;
+  }
+
+  ranges.push({ start, end: prev });
+  return ranges;
 }
 
 export function SplitTool() {
@@ -42,6 +97,9 @@ export function SplitTool() {
   const [isExtracting, setIsExtracting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [workerReady, setWorkerReady] = useState(false);
+  const [pageSpec, setPageSpec] = useState("");
+  const [outputMode, setOutputMode] = useState<OutputMode>("single");
+  const [baseName, setBaseName] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -68,6 +126,9 @@ export function SplitTool() {
     setFile(next);
     setNumPages(null);
     setSelectedPages(new Set());
+    setPageSpec("");
+    setOutputMode("single");
+    setBaseName(next ? defaultBaseName(next.name) : "");
   }, []);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -95,11 +156,67 @@ export function SplitTool() {
     });
   }, []);
 
+  const applyPageSpec = useCallback(() => {
+    setError(null);
+    if (!numPages) {
+      setError("Please wait for the PDF to load before applying a page range.");
+      return;
+    }
+
+    try {
+      const pages = parsePageSpec(pageSpec, numPages);
+      if (pages.size === 0) {
+        setError("Please enter at least one page.");
+        return;
+      }
+      setSelectedPages(pages);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Invalid page selection.");
+    }
+  }, [numPages, pageSpec]);
+
+  const selectAll = useCallback(() => {
+    if (!numPages) return;
+    setSelectedPages(new Set(Array.from({ length: numPages }, (_, i) => i + 1)));
+  }, [numPages]);
+
+  const selectNone = useCallback(() => {
+    setSelectedPages(new Set());
+  }, []);
+
+  const invertSelection = useCallback(() => {
+    if (!numPages) return;
+    setSelectedPages((prev) => {
+      const next = new Set<number>();
+      for (let p = 1; p <= numPages; p += 1) {
+        if (!prev.has(p)) next.add(p);
+      }
+      return next;
+    });
+  }, [numPages]);
+
+  const selectOdd = useCallback(() => {
+    if (!numPages) return;
+    const next = new Set<number>();
+    for (let p = 1; p <= numPages; p += 2) next.add(p);
+    setSelectedPages(next);
+  }, [numPages]);
+
+  const selectEven = useCallback(() => {
+    if (!numPages) return;
+    const next = new Set<number>();
+    for (let p = 2; p <= numPages; p += 2) next.add(p);
+    setSelectedPages(next);
+  }, [numPages]);
+
   const clear = useCallback(() => {
     setError(null);
     setFile(null);
     setNumPages(null);
     setSelectedPages(new Set());
+    setPageSpec("");
+    setOutputMode("single");
+    setBaseName("");
   }, []);
 
   const extract = useCallback(async () => {
@@ -114,28 +231,83 @@ export function SplitTool() {
       return;
     }
 
+    const effectiveBaseName = baseName.trim() || defaultBaseName(file.name);
+
     try {
       setIsExtracting(true);
 
       const sourceBytes = await file.arrayBuffer();
       const sourceDoc = await PDFDocument.load(sourceBytes);
-      const out = await PDFDocument.create();
 
       const indices = Array.from(selectedPages)
         .sort((a, b) => a - b)
         .map((p) => p - 1);
 
-      const copied = await out.copyPages(sourceDoc, indices);
-      for (const page of copied) out.addPage(page);
+      if (outputMode === "single") {
+        const out = await PDFDocument.create();
+        const copied = await out.copyPages(sourceDoc, indices);
+        for (const page of copied) out.addPage(page);
+        const outBytes = await out.save();
+        downloadBytes(
+          outBytes,
+          `${effectiveBaseName}_extracted.pdf`,
+          "application/pdf",
+        );
+        return;
+      }
 
-      const outBytes = await out.save();
-      downloadBytes(outBytes, "extracted-pages.pdf");
+      const zip = new JSZip();
+
+      if (outputMode === "zip-pages") {
+        for (const pageIndex of indices) {
+          const out = await PDFDocument.create();
+          const [page] = await out.copyPages(sourceDoc, [pageIndex]);
+          out.addPage(page);
+          const outBytes = await out.save();
+          const pageNumber = pageIndex + 1;
+          zip.file(`${effectiveBaseName}_p${pageNumber}.pdf`, outBytes);
+        }
+
+        const zipBytes = await zip.generateAsync({ type: "uint8array" });
+        downloadBytes(zipBytes, `${effectiveBaseName}_pages.zip`, "application/zip");
+        return;
+      }
+
+      const pageNumbersSorted = indices.map((i) => i + 1);
+      const ranges = pagesToRanges(pageNumbersSorted);
+
+      for (const r of ranges) {
+        const out = await PDFDocument.create();
+        const rangeIndices = Array.from(
+          { length: r.end - r.start + 1 },
+          (_, i) => r.start - 1 + i,
+        );
+        const copied = await out.copyPages(sourceDoc, rangeIndices);
+        for (const page of copied) out.addPage(page);
+        const outBytes = await out.save();
+        zip.file(`${effectiveBaseName}_p${r.start}-${r.end}.pdf`, outBytes);
+      }
+
+      const zipBytes = await zip.generateAsync({ type: "uint8array" });
+      downloadBytes(zipBytes, `${effectiveBaseName}_ranges.zip`, "application/zip");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to extract pages.");
+      const message =
+        e instanceof Error
+          ? e.message
+          : outputMode === "single"
+            ? "Failed to extract pages."
+            : "Failed to split pages.";
+      if (typeof message === "string" && message.toLowerCase().includes("encrypted")) {
+        setError("This PDF appears to be encrypted and cannot be processed.");
+      } else {
+        setError(message);
+      }
     } finally {
       setIsExtracting(false);
     }
-  }, [file, selectedPages]);
+  }, [baseName, file, outputMode, selectedPages]);
+
+  const canApplySpec = !!file && !!pageSpec.trim() && !isExtracting;
 
   return (
     <div className="space-y-4">
@@ -178,6 +350,108 @@ export function SplitTool() {
           </div>
           <Separator />
 
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground">Pages</div>
+              <div className="flex gap-2">
+                <input
+                  value={pageSpec}
+                  onChange={(e) => setPageSpec(e.target.value)}
+                  placeholder="e.g. 1-3,5,8-10"
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
+                  disabled={isExtracting}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={applyPageSpec}
+                  disabled={!canApplySpec}
+                >
+                  Apply
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground">Output</div>
+              <select
+                value={outputMode}
+                onChange={(e) => setOutputMode(e.target.value as OutputMode)}
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
+                disabled={isExtracting}
+              >
+                <option value="single">One PDF (selected pages)</option>
+                <option value="zip-pages">ZIP (one PDF per page)</option>
+                <option value="zip-ranges">ZIP (one PDF per range)</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground">Filename</div>
+              <input
+                value={baseName}
+                onChange={(e) => setBaseName(e.target.value)}
+                placeholder={file ? defaultBaseName(file.name) : ""}
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
+                disabled={isExtracting}
+              />
+            </div>
+
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground">Selection</div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={selectAll}
+                  disabled={!numPages || isExtracting}
+                >
+                  Select all
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={selectNone}
+                  disabled={selectedPages.size === 0 || isExtracting}
+                >
+                  None
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={invertSelection}
+                  disabled={!numPages || isExtracting}
+                >
+                  Invert
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={selectOdd}
+                  disabled={!numPages || isExtracting}
+                >
+                  Odd
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={selectEven}
+                  disabled={!numPages || isExtracting}
+                >
+                  Even
+                </Button>
+              </div>
+            </div>
+          </div>
+
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="text-sm text-muted-foreground">
               Selected: <span className="text-foreground">{selectedCount}</span>
@@ -190,7 +464,11 @@ export function SplitTool() {
             </div>
             <Button type="button" onClick={extract} disabled={!canExtract}>
               <DownloadIcon />
-              {isExtracting ? "Extracting..." : "Extract Selected Pages"}
+              {isExtracting
+                ? "Processing..."
+                : outputMode === "single"
+                  ? "Download PDF"
+                  : "Download ZIP"}
             </Button>
           </div>
 

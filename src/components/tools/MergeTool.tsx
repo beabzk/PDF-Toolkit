@@ -25,25 +25,13 @@ import { FileTextIcon, GripVerticalIcon, Trash2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { downloadBytes } from "@/lib/download";
 import { cn } from "@/lib/utils";
 
 type UploadedPdf = {
   id: string;
   file: File;
 };
-
-function downloadBytes(bytes: Uint8Array, fileName: string) {
-  const safeBytes = new Uint8Array(bytes);
-  const blob = new Blob([safeBytes], { type: "application/pdf" });
-  const url = URL.createObjectURL(blob);
-
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = fileName;
-  a.click();
-
-  URL.revokeObjectURL(url);
-}
 
 function SortableFileRow({
   item,
@@ -162,7 +150,7 @@ export function MergeTool() {
       }
 
       const merged = await out.save();
-      downloadBytes(merged, "merged-document.pdf");
+      downloadBytes(merged, "merged-document.pdf", "application/pdf");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to merge PDFs.");
     } finally {
