@@ -11,6 +11,7 @@ import type { DocumentProps, PageProps } from "react-pdf";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { ToolLayout } from "@/components/tools/ToolLayout";
 import { downloadBytes } from "@/lib/download";
 import { loadPdfDocument } from "@/lib/pdf";
 import { ensurePdfJsWorker } from "@/lib/pdfjs";
@@ -310,149 +311,163 @@ export function SplitTool() {
   const canApplySpec = !!file && !!pageSpec.trim() && !isExtracting;
 
   return (
-    <div className="space-y-4">
-      {!file ? (
-        <div
-          {...getRootProps()}
-          className={cn(
-            "cursor-pointer rounded-lg border border-dashed bg-background px-4 py-6 text-center transition-colors",
-            isDragActive && "border-zinc-400",
-          )}
-        >
-          <input {...getInputProps()} />
-          <div className="text-sm font-medium">Drop a PDF here</div>
-          <div className="mt-1 text-xs text-muted-foreground">
-            Or click to browse. Single PDF only.
+    <ToolLayout
+      title="Split PDF"
+      description="Extract pages from a PDF file."
+      error={error}
+      headerActions={
+        file ? (
+          <Button type="button" variant="outline" size="sm" onClick={clear} disabled={isExtracting}>
+            <XIcon />
+            Clear
+          </Button>
+        ) : null
+      }
+      footer={
+        file ? (
+          <Button type="button" onClick={extract} disabled={!canExtract}>
+            <DownloadIcon />
+            {isExtracting
+              ? "Processing..."
+              : outputMode === "single"
+                ? "Download PDF"
+                : "Download ZIP"}
+          </Button>
+        ) : null
+      }
+    >
+      <div className="space-y-4">
+        {!file ? (
+          <div
+            {...getRootProps()}
+            className={cn(
+              "cursor-pointer rounded-lg border border-dashed bg-background px-4 py-6 text-center transition-colors",
+              isDragActive && "border-zinc-400",
+            )}
+          >
+            <input {...getInputProps()} />
+            <div className="text-sm font-medium">Drop a PDF here</div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              Or click to browse. Single PDF only.
+            </div>
           </div>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-2">
-              <FileTextIcon className="size-4 text-muted-foreground" />
-              <div className="min-w-0">
-                <div className="truncate text-sm font-medium">{file.name}</div>
-                <div className="text-xs text-muted-foreground">
-                  {(file.size / (1024 * 1024)).toFixed(2)} MB
+        ) : (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <FileTextIcon className="size-4 text-muted-foreground" />
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium">{file.name}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {(file.size / (1024 * 1024)).toFixed(2)} MB
+                  </div>
                 </div>
               </div>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={clear}
-              disabled={isExtracting}
-            >
-              <XIcon />
-              Clear
-            </Button>
-          </div>
-          <Separator />
+            <Separator />
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1">
-              <div className="text-xs text-muted-foreground">Pages</div>
-              <div className="flex gap-2">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <div className="text-xs text-muted-foreground">Pages</div>
+                <div className="flex gap-2">
+                  <input
+                    value={pageSpec}
+                    onChange={(e) => setPageSpec(e.target.value)}
+                    placeholder="e.g. 1-3,5,8-10"
+                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
+                    disabled={isExtracting}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={applyPageSpec}
+                    disabled={!canApplySpec}
+                  >
+                    Apply
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <div className="text-xs text-muted-foreground">Output</div>
+                <select
+                  value={outputMode}
+                  onChange={(e) => setOutputMode(e.target.value as OutputMode)}
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
+                  disabled={isExtracting}
+                >
+                  <option value="single">One PDF (selected pages)</option>
+                  <option value="zip-pages">ZIP (one PDF per page)</option>
+                  <option value="zip-ranges">ZIP (one PDF per range)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <div className="text-xs text-muted-foreground">Filename</div>
                 <input
-                  value={pageSpec}
-                  onChange={(e) => setPageSpec(e.target.value)}
-                  placeholder="e.g. 1-3,5,8-10"
+                  value={baseName}
+                  onChange={(e) => setBaseName(e.target.value)}
+                  placeholder={file ? defaultBaseName(file.name) : ""}
                   className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
                   disabled={isExtracting}
                 />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={applyPageSpec}
-                  disabled={!canApplySpec}
-                >
-                  Apply
-                </Button>
+              </div>
+
+              <div className="space-y-1">
+                <div className="text-xs text-muted-foreground">Selection</div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={selectAll}
+                    disabled={!numPages || isExtracting}
+                  >
+                    Select all
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={selectNone}
+                    disabled={selectedPages.size === 0 || isExtracting}
+                  >
+                    None
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={invertSelection}
+                    disabled={!numPages || isExtracting}
+                  >
+                    Invert
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={selectOdd}
+                    disabled={!numPages || isExtracting}
+                  >
+                    Odd
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={selectEven}
+                    disabled={!numPages || isExtracting}
+                  >
+                    Even
+                  </Button>
+                </div>
               </div>
             </div>
 
-            <div className="space-y-1">
-              <div className="text-xs text-muted-foreground">Output</div>
-              <select
-                value={outputMode}
-                onChange={(e) => setOutputMode(e.target.value as OutputMode)}
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
-                disabled={isExtracting}
-              >
-                <option value="single">One PDF (selected pages)</option>
-                <option value="zip-pages">ZIP (one PDF per page)</option>
-                <option value="zip-ranges">ZIP (one PDF per range)</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1">
-              <div className="text-xs text-muted-foreground">Filename</div>
-              <input
-                value={baseName}
-                onChange={(e) => setBaseName(e.target.value)}
-                placeholder={file ? defaultBaseName(file.name) : ""}
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
-                disabled={isExtracting}
-              />
-            </div>
-
-            <div className="space-y-1">
-              <div className="text-xs text-muted-foreground">Selection</div>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={selectAll}
-                  disabled={!numPages || isExtracting}
-                >
-                  Select all
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={selectNone}
-                  disabled={selectedPages.size === 0 || isExtracting}
-                >
-                  None
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={invertSelection}
-                  disabled={!numPages || isExtracting}
-                >
-                  Invert
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={selectOdd}
-                  disabled={!numPages || isExtracting}
-                >
-                  Odd
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={selectEven}
-                  disabled={!numPages || isExtracting}
-                >
-                  Even
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="text-sm text-muted-foreground">
               Selected: <span className="text-foreground">{selectedCount}</span>
               {numPages ? (
@@ -462,86 +477,72 @@ export function SplitTool() {
                 </>
               ) : null}
             </div>
-            <Button type="button" onClick={extract} disabled={!canExtract}>
-              <DownloadIcon />
-              {isExtracting
-                ? "Processing..."
-                : outputMode === "single"
-                  ? "Download PDF"
-                  : "Download ZIP"}
-            </Button>
-          </div>
 
-          {error ? <div className="text-sm text-destructive">{error}</div> : null}
-
-          <ScrollArea className="h-[28rem]">
-            <div className="pr-3">
-              {workerReady ? (
-                <PdfDocument
-                  file={file}
-                  onLoadSuccess={({ numPages: nextNumPages }: { numPages: number }) => {
-                    setNumPages(nextNumPages);
-                  }}
-                  onLoadError={(e: unknown) => {
-                    setError(
-                      e instanceof Error ? e.message : "Failed to load the PDF.",
-                    );
-                  }}
-                  loading={
-                    <div className="py-8 text-center text-sm text-muted-foreground">
-                      Loading PDF...
-                    </div>
-                  }
-                >
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-                    {pageNumbers.map((pageNumber) => {
-                      const isSelected = selectedPages.has(pageNumber);
-                      return (
-                        <button
-                          key={pageNumber}
-                          type="button"
-                          onClick={() => toggle(pageNumber)}
-                          aria-pressed={isSelected}
-                          className={cn(
-                            "group text-left",
-                            isExtracting && "pointer-events-none opacity-60",
-                          )}
-                        >
-                          <div
+            <ScrollArea className="h-[28rem]">
+              <div className="pr-3">
+                {workerReady ? (
+                  <PdfDocument
+                    file={file}
+                    onLoadSuccess={({ numPages: nextNumPages }: { numPages: number }) => {
+                      setNumPages(nextNumPages);
+                    }}
+                    onLoadError={(e: unknown) => {
+                      setError(e instanceof Error ? e.message : "Failed to load the PDF.");
+                    }}
+                    loading={
+                      <div className="py-8 text-center text-sm text-muted-foreground">
+                        Loading PDF...
+                      </div>
+                    }
+                  >
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                      {pageNumbers.map((pageNumber) => {
+                        const isSelected = selectedPages.has(pageNumber);
+                        return (
+                          <button
+                            key={pageNumber}
+                            type="button"
+                            onClick={() => toggle(pageNumber)}
+                            aria-pressed={isSelected}
                             className={cn(
-                              "overflow-hidden rounded-md border bg-white transition-colors dark:bg-black",
-                              isSelected
-                                ? "border-blue-500 ring-2 ring-blue-500/20"
-                                : "border-border",
+                              "group text-left",
+                              isExtracting && "pointer-events-none opacity-60",
                             )}
                           >
-                            <PdfPage
-                              pageNumber={pageNumber}
-                              width={180}
-                              renderTextLayer={false}
-                              renderAnnotationLayer={false}
-                              loading={
-                                <div className="h-[14rem] bg-muted" />
-                              }
-                            />
-                          </div>
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            Page {pageNumber}
-                          </div>
-                        </button>
-                      );
-                    })}
+                            <div
+                              className={cn(
+                                "overflow-hidden rounded-md border bg-white transition-colors dark:bg-black",
+                                isSelected
+                                  ? "border-blue-500 ring-2 ring-blue-500/20"
+                                  : "border-border",
+                              )}
+                            >
+                              <PdfPage
+                                pageNumber={pageNumber}
+                                width={180}
+                                renderTextLayer={false}
+                                renderAnnotationLayer={false}
+                                loading={<div className="h-[14rem] bg-muted" />}
+                              />
+                            </div>
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              Page {pageNumber}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </PdfDocument>
+                ) : (
+                  <div className="py-8 text-center text-sm text-muted-foreground">
+                    Initializing PDF renderer...
                   </div>
-                </PdfDocument>
-              ) : (
-                <div className="py-8 text-center text-sm text-muted-foreground">
-                  Initializing PDF renderer...
-                </div>
-              )}
-            </div>
-          </ScrollArea>
-        </div>
-      )}
-    </div>
+                )}
+              </div>
+            </ScrollArea>
+          </div>
+        )}
+      </div>
+    </ToolLayout>
   );
 }

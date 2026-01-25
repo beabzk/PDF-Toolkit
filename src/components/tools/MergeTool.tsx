@@ -23,9 +23,9 @@ import { CSS } from "@dnd-kit/utilities";
 import { FileTextIcon, GripVerticalIcon, Trash2Icon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { ToolLayout } from "@/components/tools/ToolLayout";
 import { downloadBytes } from "@/lib/download";
 import { loadPdfDocument } from "@/lib/pdf";
 import { cn } from "@/lib/utils";
@@ -179,99 +179,92 @@ export function MergeTool() {
   }, [items, task]);
 
   return (
-    <div className="space-y-4">
-      <div
-        {...getRootProps()}
-        className={cn(
-          "cursor-pointer rounded-lg border border-dashed bg-background px-4 py-6 text-center transition-colors",
-          isDragActive && "border-zinc-400",
-        )}
-      >
-        <input {...getInputProps()} />
-        <div className="text-sm font-medium">Drop PDF files here</div>
-        <div className="mt-1 text-xs text-muted-foreground">
-          Or click to browse. You can upload multiple PDFs.
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <div className="text-sm font-medium">Files</div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setItems([])}
-            disabled={items.length === 0 || task.isRunning}
-          >
-            Clear
+    <ToolLayout
+      title="Merge PDF"
+      description="Combine multiple PDFs into one file."
+      error={error}
+      progress={task.isRunning ? (task.progress ?? 0) : null}
+      progressLabel={
+        task.isRunning
+          ? typeof task.progress === "number"
+            ? `Progress: ${task.progress}%`
+            : "Processing..."
+          : undefined
+      }
+      footer={
+        <>
+          <Button type="button" onClick={merge} disabled={items.length < 2 || task.isRunning}>
+            {task.isRunning ? "Merging..." : "Merge Files"}
           </Button>
-        </div>
-        <Separator />
-
-        {items.length === 0 ? (
-          <div className="text-sm text-muted-foreground">
-            Add PDFs to begin.
+          <Button type="button" variant="outline" onClick={task.cancel} disabled={!task.isRunning}>
+            Cancel
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div
+          {...getRootProps()}
+          className={cn(
+            "cursor-pointer rounded-lg border border-dashed bg-background px-4 py-6 text-center transition-colors",
+            isDragActive && "border-zinc-400",
+          )}
+        >
+          <input {...getInputProps()} />
+          <div className="text-sm font-medium">Drop PDF files here</div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            Or click to browse. You can upload multiple PDFs.
           </div>
-        ) : (
-          <ScrollArea className="h-64">
-            <div className="space-y-2 pr-3">
-              <DndContext
-                sensors={sensors}
-                collisionDetection={closestCenter}
-                onDragEnd={({ active, over }) => {
-                  if (!over || active.id === over.id) return;
-                  setItems((prev) => {
-                    const oldIndex = prev.findIndex((x) => x.id === active.id);
-                    const newIndex = prev.findIndex((x) => x.id === over.id);
-                    return arrayMove(prev, oldIndex, newIndex);
-                  });
-                }}
-              >
-                <SortableContext items={ids} strategy={verticalListSortingStrategy}>
-                  {items.map((item) => (
-                    <SortableFileRow
-                      key={item.id}
-                      item={item}
-                      onRemove={remove}
-                      disabled={task.isRunning}
-                    />
-                  ))}
-                </SortableContext>
-              </DndContext>
-            </div>
-          </ScrollArea>
-        )}
-      </div>
+        </div>
 
-      {task.isRunning ? (
         <div className="space-y-2">
-          <div className="text-xs text-muted-foreground">
-            {typeof task.progress === "number" ? `Progress: ${task.progress}%` : "Processing..."}
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-medium">Files</div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setItems([])}
+              disabled={items.length === 0 || task.isRunning}
+            >
+              Clear
+            </Button>
           </div>
-          <Progress value={typeof task.progress === "number" ? task.progress : 0} />
+          <Separator />
+
+          {items.length === 0 ? (
+            <div className="text-sm text-muted-foreground">Add PDFs to begin.</div>
+          ) : (
+            <ScrollArea className="h-64">
+              <div className="space-y-2 pr-3">
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={({ active, over }) => {
+                    if (!over || active.id === over.id) return;
+                    setItems((prev) => {
+                      const oldIndex = prev.findIndex((x) => x.id === active.id);
+                      const newIndex = prev.findIndex((x) => x.id === over.id);
+                      return arrayMove(prev, oldIndex, newIndex);
+                    });
+                  }}
+                >
+                  <SortableContext items={ids} strategy={verticalListSortingStrategy}>
+                    {items.map((item) => (
+                      <SortableFileRow
+                        key={item.id}
+                        item={item}
+                        onRemove={remove}
+                        disabled={task.isRunning}
+                      />
+                    ))}
+                  </SortableContext>
+                </DndContext>
+              </div>
+            </ScrollArea>
+          )}
         </div>
-      ) : null}
-
-      {error ? <div className="text-sm text-destructive">{error}</div> : null}
-
-      <div className="flex items-center justify-end gap-2">
-        <Button
-          type="button"
-          onClick={merge}
-          disabled={items.length < 2 || task.isRunning}
-        >
-          {task.isRunning ? "Merging..." : "Merge Files"}
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={task.cancel}
-          disabled={!task.isRunning}
-        >
-          Cancel
-        </Button>
       </div>
-    </div>
+    </ToolLayout>
   );
 }

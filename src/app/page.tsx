@@ -1,6 +1,6 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MergeTool } from "@/components/tools/MergeTool";
+import { OcrTool } from "@/components/tools/OcrTool";
 import { SplitTool } from "@/components/tools/SplitTool";
 
 export default function Home() {
@@ -10,28 +10,19 @@ export default function Home() {
         <TabsList className="w-full" variant="default">
           <TabsTrigger value="merge">Merge PDF</TabsTrigger>
           <TabsTrigger value="split">Split PDF</TabsTrigger>
+          <TabsTrigger value="ocr">OCR</TabsTrigger>
         </TabsList>
 
         <TabsContent value="merge" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Merge PDF</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <MergeTool />
-            </CardContent>
-          </Card>
+          <MergeTool />
         </TabsContent>
 
         <TabsContent value="split" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Split PDF</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <SplitTool />
-            </CardContent>
-          </Card>
+          <SplitTool />
+        </TabsContent>
+
+        <TabsContent value="ocr" className="mt-4">
+          <OcrTool />
         </TabsContent>
       </Tabs>
     </div>
