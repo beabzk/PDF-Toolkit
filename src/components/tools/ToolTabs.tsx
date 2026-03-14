@@ -7,9 +7,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MergeTool } from "@/components/tools/MergeTool";
 import { OrganizeTool } from "@/components/tools/OrganizeTool";
 import { OcrTool } from "@/components/tools/OcrTool";
+import { PdfToImagesTool } from "@/components/tools/PdfToImagesTool";
 import { SplitTool } from "@/components/tools/SplitTool";
 
-const TOOL_KEYS = ["merge", "organize", "split", "ocr"] as const;
+const TOOL_KEYS = ["merge", "organize", "split", "images", "ocr"] as const;
 type ToolKey = (typeof TOOL_KEYS)[number];
 
 function isToolKey(value: string | null): value is ToolKey {
@@ -51,6 +52,7 @@ export function ToolTabs() {
           <TabsTrigger value="merge">Merge PDF</TabsTrigger>
           <TabsTrigger value="organize">Organize PDF</TabsTrigger>
           <TabsTrigger value="split">Split PDF</TabsTrigger>
+          <TabsTrigger value="images">PDF to Images</TabsTrigger>
           <TabsTrigger value="ocr">OCR</TabsTrigger>
         </TabsList>
 
@@ -64,6 +66,10 @@ export function ToolTabs() {
 
         <TabsContent value="split" className="mt-4">
           <SplitTool />
+        </TabsContent>
+
+        <TabsContent value="images" className="mt-4">
+          <PdfToImagesTool />
         </TabsContent>
 
         <TabsContent value="ocr" className="mt-4">
