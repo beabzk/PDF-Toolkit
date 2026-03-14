@@ -5,10 +5,11 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MergeTool } from "@/components/tools/MergeTool";
+import { OrganizeTool } from "@/components/tools/OrganizeTool";
 import { OcrTool } from "@/components/tools/OcrTool";
 import { SplitTool } from "@/components/tools/SplitTool";
 
-const TOOL_KEYS = ["merge", "split", "ocr"] as const;
+const TOOL_KEYS = ["merge", "organize", "split", "ocr"] as const;
 type ToolKey = (typeof TOOL_KEYS)[number];
 
 function isToolKey(value: string | null): value is ToolKey {
@@ -48,12 +49,17 @@ export function ToolTabs() {
       <Tabs value={value} onValueChange={onValueChange} className="w-full">
         <TabsList className="w-full" variant="default">
           <TabsTrigger value="merge">Merge PDF</TabsTrigger>
+          <TabsTrigger value="organize">Organize PDF</TabsTrigger>
           <TabsTrigger value="split">Split PDF</TabsTrigger>
           <TabsTrigger value="ocr">OCR</TabsTrigger>
         </TabsList>
 
         <TabsContent value="merge" className="mt-4">
           <MergeTool />
+        </TabsContent>
+
+        <TabsContent value="organize" className="mt-4">
+          <OrganizeTool />
         </TabsContent>
 
         <TabsContent value="split" className="mt-4">
